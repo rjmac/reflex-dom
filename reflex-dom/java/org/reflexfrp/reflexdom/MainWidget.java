@@ -5,6 +5,7 @@ import android.os.Handler;
 import android.util.Log;
 import android.view.ViewGroup.LayoutParams;
 import android.view.Window;
+import android.view.View;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebSettings;
@@ -26,9 +27,18 @@ public class MainWidget {
     ws.setJavaScriptEnabled(true);
     ws.setAllowFileAccessFromFileURLs(true);
     ws.setAllowUniversalAccessFromFileURLs(true);
+    ws.setDomStorageEnabled(true);
     wv.setWebContentsDebuggingEnabled(true);
     // allow video to play without user interaction
     wv.getSettings().setMediaPlaybackRequiresUserGesture(false);
+
+    wv.setSystemUiVisibility(
+              View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                      | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                      | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                      | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                      | View.SYSTEM_UI_FLAG_FULLSCREEN
+                      | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
 
     wv.setWebViewClient(new WebViewClient() {
         @Override

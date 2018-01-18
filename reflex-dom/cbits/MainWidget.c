@@ -41,6 +41,7 @@ void Reflex_Dom_Android_MainWidget_runJS(jobject jsExecutor, const char* js) {
   assert(cls);
   jmethodID evaluateJavascript = (*env)->GetMethodID(env, cls, "evaluateJavascript", "(Ljava/lang/String;)V");
   assert(evaluateJavascript);
+  __android_log_print(ANDROID_LOG_DEBUG, "MCTAG", "JS to run: %p %s", js, js);
   jstring js_str = (*env)->NewStringUTF(env, js);
   (*env)->CallVoidMethod(env, jsExecutor, evaluateJavascript, js_str, 0);
   if((*env)->ExceptionOccurred(env)) {

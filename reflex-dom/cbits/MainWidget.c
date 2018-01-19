@@ -30,6 +30,7 @@ jobject Reflex_Dom_Android_MainWidget_start(jobject activity, const char *url, c
 }
 
 void Reflex_Dom_Android_MainWidget_runJS(jobject jsExecutor, const char* js) {
+  size_t i;
   JNIEnv *env;
   jint attachResult = (*HaskellActivity_jvm)->AttachCurrentThread(HaskellActivity_jvm, &env, NULL);
   assert (attachResult == JNI_OK);
@@ -41,7 +42,10 @@ void Reflex_Dom_Android_MainWidget_runJS(jobject jsExecutor, const char* js) {
   assert(cls);
   jmethodID evaluateJavascript = (*env)->GetMethodID(env, cls, "evaluateJavascript", "(Ljava/lang/String;)V");
   assert(evaluateJavascript);
-  __android_log_print(ANDROID_LOG_DEBUG, "MCTAG", "JS to run: %p %s", js, js);
+  __android_log_print(ANDROID_LOG_DEBUG, "MCTAG", "JS to run: %p", js);
+  for(i = 0; i < strlen(js); i += 1024) {
+    __android_log_print(ANDROID_LOG_DEBUG, "MCTAG", "%s", js + i);
+  }
   jstring js_str = (*env)->NewStringUTF(env, js);
   (*env)->CallVoidMethod(env, jsExecutor, evaluateJavascript, js_str, 0);
   if((*env)->ExceptionOccurred(env)) {

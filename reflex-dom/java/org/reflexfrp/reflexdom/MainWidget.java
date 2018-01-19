@@ -54,6 +54,9 @@ public class MainWidget {
     final Handler hnd = new Handler();
     return new Object() {
       public final void evaluateJavascript(final String js) {
+          for(int i = 0; i < js.length(); i += 1024) {
+              android.util.Log.d("MC2", js.substring(i));
+          }
         hnd.post(new Runnable() {
             @Override
             public void run() {

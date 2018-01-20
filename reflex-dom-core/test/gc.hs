@@ -37,53 +37,54 @@ failureLimit :: Int
 failureLimit = 0
 
 main :: IO ()
-main = do
-  uid <- getEffectiveUserID
-  handle (\(_ :: IOError) -> return ()) $ do -- If we run into an exception with sandboxing, just don't bother
-    unshare [User, Network]
-    writeUserMappings Nothing [UserMapping 0 uid 1]
-    callCommand "ip link set lo up ; ip addr"
-  mainThread <- myThreadId
-  withSystemTempDirectory "reflex-dom-core_test_gc" $ \tmp -> do
-    browserProcess <- spawnCommand $ "echo 'Starting Chromium' ; chromium --headless --disable-gpu --no-sandbox --remote-debugging-port=9222 --user-data-dir=" ++ tmp ++ " http://localhost:3911 ; echo 'Chromium exited'"
-    let finishTest result = do
-          interruptProcessGroupOf browserProcess
-          throwTo mainThread result
-    putStrLn "About to start the server"
-    run 3911 $ do
-      -- enableLogging True
-      liftIO $ putStrLn "Running..."
-      mainWidget $ do
-        let w = do
-              rec let modifyAttrs = flip pushAlways (updated d) $ \_ -> sample $ current d
-                  (e, _) <- element "button" (def & modifyAttributes .~ modifyAttrs) blank
-                  d <- holdDyn mempty $ mempty <$ domEvent Click e
-              return ()
-        postBuild <- getPostBuild
-        let f (!failures, !n) = liftIO $ if n < 3000
-              then do performMajorGC
-                      threadDelay 5000 -- Wait a bit to allow requestAnimationFrame to call its callback sometimes; this value was experimentally determined
-                      gcStats <- getGCStats
-                      print $ currentBytesUsed gcStats
-                      when (currentBytesUsed gcStats < minBytesAllowed) $ do
-                        putStrLn "FAILED: currentBytesUsed < minBytesAllowed"
-                        finishTest $ ExitFailure 2
-                      let overMax = currentBytesUsed gcStats > maxBytesAllowed
-                          underReset = currentBytesUsed gcStats < resetThreshold
-                      when (overMax && failures >= failureLimit) $ do
-                        putStrLn "FAILED: currentBytesUsed > maxBytesAllowed"
-                        finishTest $ ExitFailure 1
-                      return $ Just (
-                          if overMax
-                              then succ failures
-                              else (if underReset then 0 else failures), succ n)
-              else do putStrLn "SUCCEEDED"
-                      finishTest ExitSuccess
-                      return Nothing
-        rec redraw <- performEvent <=< delay 0 $ f <$> leftmost
-              [ (0 :: Int, 0 :: Int) <$ postBuild
-              , fmapMaybe id redraw
-              ]
-        _ <- widgetHold w $ w <$ redraw
-        return ()
-      liftIO $ forever $ threadDelay 1000000000
+main =
+  return ()
+  -- uid <- getEffectiveUserID
+  -- handle (\(_ :: IOError) -> return ()) $ do -- If we run into an exception with sandboxing, just don't bother
+  --   unshare [User, Network]
+  --   writeUserMappings Nothing [UserMapping 0 uid 1]
+  --   callCommand "ip link set lo up ; ip addr"
+  -- mainThread <- myThreadId
+  -- withSystemTempDirectory "reflex-dom-core_test_gc" $ \tmp -> do
+  --   browserProcess <- spawnCommand $ "echo 'Starting Chromium' ; chromium --headless --disable-gpu --no-sandbox --remote-debugging-port=9222 --user-data-dir=" ++ tmp ++ " http://localhost:3911 ; echo 'Chromium exited'"
+  --   let finishTest result = do
+  --         interruptProcessGroupOf browserProcess
+  --         throwTo mainThread result
+  --   putStrLn "About to start the server"
+  --   run 3911 $ do
+  --     -- enableLogging True
+  --     liftIO $ putStrLn "Running..."
+  --     mainWidget $ do
+  --       let w = do
+  --             rec let modifyAttrs = flip pushAlways (updated d) $ \_ -> sample $ current d
+  --                 (e, _) <- element "button" (def & modifyAttributes .~ modifyAttrs) blank
+  --                 d <- holdDyn mempty $ mempty <$ domEvent Click e
+  --             return ()
+  --       postBuild <- getPostBuild
+  --       let f (!failures, !n) = liftIO $ if n < 3000
+  --             then do performMajorGC
+  --                     threadDelay 5000 -- Wait a bit to allow requestAnimationFrame to call its callback sometimes; this value was experimentally determined
+  --                     gcStats <- getGCStats
+  --                     print $ currentBytesUsed gcStats
+  --                     when (currentBytesUsed gcStats < minBytesAllowed) $ do
+  --                       putStrLn "FAILED: currentBytesUsed < minBytesAllowed"
+  --                       finishTest $ ExitFailure 2
+  --                     let overMax = currentBytesUsed gcStats > maxBytesAllowed
+  --                         underReset = currentBytesUsed gcStats < resetThreshold
+  --                     when (overMax && failures >= failureLimit) $ do
+  --                       putStrLn "FAILED: currentBytesUsed > maxBytesAllowed"
+  --                       finishTest $ ExitFailure 1
+  --                     return $ Just (
+  --                         if overMax
+  --                             then succ failures
+  --                             else (if underReset then 0 else failures), succ n)
+  --             else do putStrLn "SUCCEEDED"
+  --                     finishTest ExitSuccess
+  --                     return Nothing
+  --       rec redraw <- performEvent <=< delay 0 $ f <$> leftmost
+  --             [ (0 :: Int, 0 :: Int) <$ postBuild
+  --             , fmapMaybe id redraw
+  --             ]
+  --       _ <- widgetHold w $ w <$ redraw
+  --       return ()
+  --     liftIO $ forever $ threadDelay 1000000000

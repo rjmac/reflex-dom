@@ -42,7 +42,10 @@ startMainWidget a url jsm = do
     , _jsaddleCallbacks_jsaddleSyncResult = \s -> do
         case decode $ LBS.fromStrict s of
           Nothing -> error $ "jsaddle message decode failed: " <> show s
-          Just r -> LBS.toStrict . encode <$> processSyncResult r
+          Just r -> do
+            res <- LBS.toStrict . encode <$> processSyncResult r
+            print ("synres", res)
+            return res
     , _jsaddleCallbacks_jsaddleJsData = LBS.toStrict $ ghcjsHelpers <> "\
         \runJSaddleBatch = (function() {\n\
         \ " <> initState <> "\n\

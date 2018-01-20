@@ -54,13 +54,54 @@ public class MainWidget {
     final Handler hnd = new Handler();
     return new Object() {
       public final void evaluateJavascript(final String js) {
-          for(int i = 0; i < js.length(); i += 1024) {
-              android.util.Log.d("MC2", js.substring(i));
-          }
+        android.util.Log.d("MC2", js);
         hnd.post(new Runnable() {
             @Override
             public void run() {
-              wv.evaluateJavascript(js, null);
+              // A weird thing happens going over this boundary into
+              // the webview.  Unicode characters can sometimes
+              // silently vanish!  I have NO IDEA what causes this,
+              // but the upshot of it is that we can't put Unicode
+              // there.
+              String jsc = convertUnicode(js);
+              android.util.Log.d("MC3", jsc);
+              wv.evaluateJavascript(jsc, null);
+            }
+
+            private String convertUnicode(String str) {
+              // This conversion would be way more elegant with Java 8
+              // streams, but they're not supported until SDK 24 and
+              // reflex-dom supports back to 21.
+              //
+              // It can be pretty naïve because non-ASCII chars are only
+              // inside strings in the JS we generate, so we'll just blindly
+              // convert everything like that.
+
+              StringBuilder sb = new StringBuilder(str.length());
+
+              // int codepoint;
+              // for(int i = 0; i < str.length(); i += Character.charCount(codepoint)) {
+              //   codepoint = str.codePointAt(i);
+              //   if(codepoint < 128) {
+              //     sb.append((char) codepoint);
+              //   } else {
+              //     sb.append("\\u{").
+              //         append(Integer.toString(codepoint, 16)).
+              //         append('}');
+              //   }
+              // }
+              for(int i = 0; i < str.length(); ++i) {
+                  char c = str.charAt(i);
+                  if(c < 128) {
+                      sb.append(c);
+                  } else {
+                      sb.append(String.format("\\u%04x", (int)c));
+                  }
+              }
+
+              // If we didn't actually find any unicode, don't bother
+              // re-re(-re-re)-copying the string
+              return sb.length() == str.length() ? str : sb.toString();
             }
           });
       }
@@ -85,13 +126,17 @@ public class MainWidget {
 
     @JavascriptInterface
     public boolean postMessage(final String msg) {
+      android.util.Log.d("MC4a", msg);
       processMessage(callbacks, msg);
       return true;
     }
 
     @JavascriptInterface
     public String syncMessage(final String msg) {
-      return processSyncMessage(callbacks, msg);
+      android.util.Log.d("MC4s", msg);
+      String result = processSyncMessage(callbacks, msg);
+      android.util.Log.d("MC4r", result);
+      return result;
     }
   }
 }

@@ -56,6 +56,7 @@ public class MainWidget {
     return new Object() {
       public final void evaluateJavascript(final byte[] js) {
         final String jsStr = new String(js, StandardCharsets.UTF_8);
+        android.util.Log.d("MainWidget", "Evaluating " + jsStr);
         hnd.post(new Runnable() {
             @Override
             public void run() {
@@ -84,14 +85,18 @@ public class MainWidget {
 
     @JavascriptInterface
     public boolean postMessage(final String msg) {
+      android.util.Log.d("MainWidget", "fromJS: " + msg);
       processMessage(callbacks, msg.getBytes(StandardCharsets.UTF_8));
       return true;
     }
 
     @JavascriptInterface
     public String syncMessage(final String msg) {
-      return new String(processSyncMessage(callbacks, msg.getBytes(StandardCharsets.UTF_8)),
-                        StandardCharsets.UTF_8);
+      android.util.Log.d("MainWidget", "fromJS: " + msg);
+      String result = new String(processSyncMessage(callbacks, msg.getBytes(StandardCharsets.UTF_8)),
+                                 StandardCharsets.UTF_8);
+      android.util.Log.d("MainWidget", "toJS: " + result);
+      return result;
     }
   }
 }

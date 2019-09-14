@@ -1,8 +1,12 @@
 package org.reflexfrp.reflexdom;
 
+import java.lang.reflect.Method;
+
+import android.Manifest;
 import android.app.Activity;
 import android.os.Handler;
 import android.util.Log;
+import android.content.pm.PackageManager;
 import android.view.ViewGroup.LayoutParams;
 import android.view.Window;
 import android.view.View;
@@ -17,7 +21,8 @@ import android.webkit.PermissionRequest;
 import java.nio.charset.StandardCharsets;
 
 public class MainWidget {
-  private static Object startMainWidget(Activity a, String url, long jsaddleCallbacks, final String initialJS) {
+  static final int REQ_READ_CAMERA = 1;
+  private static Object startMainWidget(final Activity a, String url, long jsaddleCallbacks, final String initialJS) {
     CookieManager.setAcceptFileSchemeCookies(true); //TODO: Can we do this just for our own WebView?
 
     // Remove title and notification bars
@@ -26,9 +31,57 @@ public class MainWidget {
     final WebView wv = new WebView(a);
     wv.setLayoutParams(new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
     wv.setWebChromeClient(new WebChromeClient() {
+            PermissionRequest pendingRequest;
+
+            {
+                try {
+                    Class<?> cls = a.getClass();
+                    Method m = cls.getMethod("setOnRequestPermissionsResultCallback", Object.class);
+                    m.invoke(a, this);
+                } catch(RuntimeException e) {
+                    throw e;
+                } catch(Exception e) {
+                    throw new RuntimeException(e);
+                }
+            }
+            private void askPermission(Activity a, PermissionRequest request) {
+                if(a.checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                    request.grant(request.getResources());
+                } else {
+                    pendingRequest = request;
+                    a.requestPermissions(new String[]{Manifest.permission.CAMERA}, REQ_READ_CAMERA);
+                }
+            }
+
+            public boolean onRequestPermissionsResultCallback(int requestCode, String[] permissions, int[] grantResults) {
+                if(pendingRequest != null) {
+                    PermissionRequest request = pendingRequest;
+                    pendingRequest = null;
+                    if(requestCode == REQ_READ_CAMERA) {
+                        if(permissions.length != 1 || grantResults.length != 1 || grantResults[0] != PackageManager.PERMISSION_GRANTED) {
+                            request.deny();
+                        } else {
+                            request.grant(request.getResources());
+                        }
+                        return true;
+                    }
+                }
+                return false;
+            }
+
             @Override
             public void onPermissionRequest(PermissionRequest request) {
-                request.grant(request.getResources());
+                for(String r : request.getResources()) {
+                    if(PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(r)) {
+                        askPermission(a, request);
+                        break;
+                    }
+                }
+            }
+
+            @Override
+            public void onPermissionRequestCanceled(PermissionRequest request) {
+                pendingRequest = null;
             }
         });
     a.setContentView(wv);

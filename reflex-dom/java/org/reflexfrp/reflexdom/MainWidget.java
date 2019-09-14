@@ -11,6 +11,8 @@ import android.webkit.JavascriptInterface;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.webkit.WebChromeClient;
+import android.webkit.PermissionRequest;
 
 import java.nio.charset.StandardCharsets;
 
@@ -23,6 +25,12 @@ public class MainWidget {
 
     final WebView wv = new WebView(a);
     wv.setLayoutParams(new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
+    wv.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public void onPermissionRequest(PermissionRequest request) {
+                request.grant(request.getResources());
+            }
+        });
     a.setContentView(wv);
     final WebSettings ws = wv.getSettings();
     ws.setJavaScriptEnabled(true);

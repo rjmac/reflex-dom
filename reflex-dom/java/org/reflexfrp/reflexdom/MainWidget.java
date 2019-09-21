@@ -22,6 +22,7 @@ import java.nio.charset.StandardCharsets;
 
 public class MainWidget {
   static final int REQ_READ_CAMERA = 1;
+
   private static Object startMainWidget(final Activity a, String url, long jsaddleCallbacks, final String initialJS) {
     CookieManager.setAcceptFileSchemeCookies(true); //TODO: Can we do this just for our own WebView?
 
@@ -29,6 +30,7 @@ public class MainWidget {
     a.requestWindowFeature(Window.FEATURE_NO_TITLE);
 
     final WebView wv = new WebView(a);
+    wv.addJavascriptInterface(new CustomJS(a, wv), "magicounter");
     wv.setLayoutParams(new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
     wv.setWebChromeClient(new WebChromeClient() {
             PermissionRequest pendingRequest;
@@ -125,6 +127,37 @@ public class MainWidget {
           });
       }
     };
+  }
+
+  private static class CustomJS {
+      private final Activity activity;
+      private final WebView webView;
+
+      public CustomJS(Activity activity, WebView webView) {
+          this.activity = activity;
+          this.webView = webView;
+      }
+
+      @JavascriptInterface
+      public String setupBattery() {
+          try {
+              Class<?> cls = activity.getClass();
+              Method m = cls.getMethod("setBatteryStatusCallback", Object.class);
+              return (String) m.invoke(activity, CustomJS.this);
+          } catch(RuntimeException e) {
+              throw e;
+          } catch(Exception e) {
+              throw new RuntimeException(e);
+          }
+      }
+
+      public void onBatteryStatusCallback(final boolean charging, final float percent) {
+          webView.post(new Runnable() {
+                  public void run() {
+                      webView.evaluateJavascript("batterycb({ charging: " + charging + ", percent: " + percent + "});", null);
+                  }
+              });
+      }
   }
 
   private static class JSaddleCallbacks {

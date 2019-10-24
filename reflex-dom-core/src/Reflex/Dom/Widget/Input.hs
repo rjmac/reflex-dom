@@ -112,7 +112,15 @@ textInputGetEnter = keypress Enter
 
 {-# INLINABLE keypress #-}
 keypress :: (Reflex t, HasDomEvent t e 'KeypressTag, DomEventType e 'KeypressTag ~ Word) => Key -> e -> Event t ()
-keypress key i = fmapMaybe (\n -> if keyCodeLookup (fromIntegral n) == key then Just () else Nothing) $ domEvent Keypress i
+keypress key = fmapMaybe (\n -> guard $ keyCodeLookup (fromIntegral n) == key) . domEvent Keypress
+
+{-# INLINABLE keydown #-}
+keydown :: (Reflex t, HasDomEvent t e 'KeydownTag, DomEventType e 'KeydownTag ~ Word) => Key -> e -> Event t ()
+keydown key = fmapMaybe (\n -> guard $ keyCodeLookup (fromIntegral n) == key) . domEvent Keydown
+
+{-# INLINABLE keyup #-}
+keyup :: (Reflex t, HasDomEvent t e 'KeyupTag, DomEventType e 'KeyupTag ~ Word) => Key -> e -> Event t ()
+keyup key = fmapMaybe (\n -> guard $ keyCodeLookup (fromIntegral n) == key) . domEvent Keyup
 
 data RangeInputConfig t
    = RangeInputConfig { _rangeInputConfig_initialValue :: Float
@@ -338,16 +346,10 @@ fileInput config = do
         & modifyAttributes .~ fmap mapKeysToAttributeName modifyAttrs
         & elementConfig_eventSpec . ghcjsEventSpec_filters .~ filters
       cfg = (def :: InputElementConfig EventResult t (DomBuilderSpace m)) & inputElementConfig_elementConfig .~ elCfg
-  eRaw <- inputElement cfg
-  let e = _inputElement_raw eRaw
-  eChange <- wrapDomEvent e (`on` Events.change) $ do
-      files <- Input.getFilesUnchecked e
-      len <- FileList.getLength files
-      mapM (fmap (fromMaybe (error "fileInput: fileList.item returned null")) . FileList.item files) [0 .. len-1]
-  dValue <- holdDyn [] eChange
+  input <- inputElement cfg
   return $ FileInput
-    { _fileInput_value = dValue
-    , _fileInput_element = e
+    { _fileInput_value = _inputElement_files input
+    , _fileInput_element = _inputElement_raw input
     }
 
 data Dropdown t k

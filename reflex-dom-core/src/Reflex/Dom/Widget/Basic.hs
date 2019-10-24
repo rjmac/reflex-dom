@@ -10,16 +10,18 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 module Reflex.Dom.Widget.Basic
-  ( partitionMapBySetLT
-  , ChildResult (..)
-
+  (
   -- * Displaying Values
-  , text
+    text
   , dynText
+  , comment
+  , dynComment
   , display
   , button
   , dyn
+  , dyn_
   , widgetHold
+  , widgetHold_
 
   -- * Creating DOM Elements
   , el
@@ -27,6 +29,7 @@ module Reflex.Dom.Widget.Basic
   , elClass
   , elDynAttr
   , elDynClass
+  , elDynAttrNS
 
   -- ** With Element Results
   , el'
@@ -54,6 +57,7 @@ module Reflex.Dom.Widget.Basic
   , module Data.Map.Misc
   , module Reflex.Collection
   , module Reflex.Workflow
+  , partitionMapBySetLT
   ) where
 
 import Reflex.Class
@@ -62,7 +66,6 @@ import Reflex.Dom.Builder.Class
 import Reflex.Dom.Class
 import Reflex.Dynamic
 import Reflex.Network
-import Reflex.NotReady.Class
 import Reflex.PostBuild.Class
 import Reflex.Workflow
 
@@ -73,6 +76,7 @@ import Data.Align
 import Data.Default
 import Data.Either
 import Data.Foldable
+import Data.Functor (void)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Map.Misc
@@ -90,6 +94,7 @@ import Prelude hiding (mapM, mapM_, sequence, sequence_)
 -- No empty pieces will be included in the output.
 
 --TODO: This can probably be done more efficiently by dividing and conquering, re-using the structure of the Set instead of going through the Set linearally
+{-# DEPRECATED partitionMapBySetLT "This will be removed in future releases." #-}
 partitionMapBySetLT :: forall k v. Ord k => Set k -> Map k v -> Map (Either k ()) (Map k v)
 partitionMapBySetLT s m0 = Map.fromDistinctAscList $ go (Set.toAscList s) m0
   where go :: [k] -> Map k v -> [(Either k (), Map k v)]
@@ -102,8 +107,7 @@ partitionMapBySetLT s m0 = Map.fromDistinctAscList $ go (Set.toAscList s) m0
                         then go t geq
                         else (Left h, lt) : go t geq
 
-newtype ChildResult t k a = ChildResult { unChildResult :: (a, Event t (Map k (Maybe (ChildResult t k a)))) }
-
+{-# INLINABLE text #-}
 text :: DomBuilder t m => Text -> m ()
 text t = void $ textNode $ def & textNodeConfig_initialContents .~ t
 
@@ -112,6 +116,19 @@ dynText :: forall t m. (PostBuild t m, DomBuilder t m) => Dynamic t Text -> m ()
 dynText t = do
   postBuild <- getPostBuild
   void $ textNode $ (def :: TextNodeConfig t) & textNodeConfig_setContents .~ leftmost
+    [ updated t
+    , tag (current t) postBuild
+    ]
+  notReadyUntil postBuild
+
+comment :: DomBuilder t m => Text -> m ()
+comment t = void $ commentNode $ def & commentNodeConfig_initialContents .~ t
+
+{-# INLINABLE dynComment #-}
+dynComment :: forall t m. (PostBuild t m, DomBuilder t m) => Dynamic t Text -> m ()
+dynComment t = do
+  postBuild <- getPostBuild
+  void $ commentNode $ (def :: CommentNodeConfig t) & commentNodeConfig_setContents .~ leftmost
     [ updated t
     , tag (current t) postBuild
     ]
@@ -128,54 +145,70 @@ button t = do
 --TODO: Should this be renamed to 'widgetView' for consistency with 'widgetHold'?
 -- | Given a Dynamic of widget-creating actions, create a widget that is recreated whenever the Dynamic updates.
 --   The returned Event of widget results occurs when the Dynamic does.
---   Note:  Often, the type 'a' is an Event, in which case the return value is an Event-of-Events that would typically be flattened (via 'switchPromptly').
+--   Note:  Often, the type @a@ is an 'Event', in which case the return value is an Event-of-Events that would typically be flattened (via 'switchHold').
 dyn :: (DomBuilder t m, PostBuild t m) => Dynamic t (m a) -> m (Event t a)
-dyn = networkView 
+dyn = networkView
+
+-- | Like 'dyn' but discards result.
+dyn_ :: (DomBuilder t m, PostBuild t m) => Dynamic t (m a) -> m ()
+dyn_ = void . dyn
 
 -- | Given an initial widget and an Event of widget-creating actions, create a widget that is recreated whenever the Event fires.
 --   The returned Dynamic of widget results occurs when the Event does.
---   Note:  Often, the type 'a' is an Event, in which case the return value is a Dynamic-of-Events that would typically be flattened.
+--   Note:  Often, the type 'a' is an Event, in which case the return value is a Dynamic-of-Events that would typically be flattened (via 'switchDyn').
 widgetHold :: (DomBuilder t m, MonadHold t m) => m a -> Event t (m a) -> m (Dynamic t a)
 widgetHold = networkHold
 
+-- | Like 'widgetHold' but discards result.
+widgetHold_ :: (DomBuilder t m, MonadHold t m) => m a -> Event t (m a) -> m ()
+widgetHold_ z = void . widgetHold z
+
 -- | Create a DOM element
--- > el "div" (text "Hello World")
+--
+-- >>> el "div" (text "Hello World")
 -- <div>Hello World</div>
 {-# INLINABLE el #-}
 el :: forall t m a. DomBuilder t m => Text -> m a -> m a
 el elementTag child = snd <$> el' elementTag child
 
 -- | Create a DOM element with attributes
--- > elAttr "a" ("href" =: "http://google.com") (text "Google!")
--- <a href="http://google.com">Google!</a>
+--
+-- >>> elAttr "a" ("href" =: "https://reflex-frp.org") (text "Reflex-FRP!")
+-- <a href="https://reflex-frp.org">Reflex-FRP!</a>
 {-# INLINABLE elAttr #-}
 elAttr :: forall t m a. DomBuilder t m => Text -> Map Text Text -> m a -> m a
 elAttr elementTag attrs child = snd <$> elAttr' elementTag attrs child
 
 -- | Create a DOM element with classes
--- > elClass "div" "row" (return ())
+--
+-- >>> elClass "div" "row" (return ())
 -- <div class="row"></div>
 {-# INLINABLE elClass #-}
 elClass :: forall t m a. DomBuilder t m => Text -> Text -> m a -> m a
 elClass elementTag c child = snd <$> elClass' elementTag c child
 
 -- | Create a DOM element with Dynamic Attributes
--- > elClass "div" (constDyn ("class" =: "row")) (return ())
+--
+-- >>> elClass "div" (constDyn ("class" =: "row")) (return ())
 -- <div class="row"></div>
 {-# INLINABLE elDynAttr #-}
 elDynAttr :: forall t m a. (DomBuilder t m, PostBuild t m) => Text -> Dynamic t (Map Text Text) -> m a -> m a
 elDynAttr elementTag attrs child = snd <$> elDynAttr' elementTag attrs child
 
 -- | Create a DOM element with a Dynamic Class
--- > elDynClass "div" (constDyn "row") (return ())
+--
+-- >>> elDynClass "div" (constDyn "row") (return ())
 -- <div class="row"></div>
 {-# INLINABLE elDynClass #-}
 elDynClass :: forall t m a. (DomBuilder t m, PostBuild t m) => Text -> Dynamic t Text -> m a -> m a
 elDynClass elementTag c child = snd <$> elDynClass' elementTag c child
 
 -- | Create a DOM element and return the element
--- > do (e, _) <- el' "div" (text "Click")
--- >    return $ domEvent Click e
+--
+-- @
+--  do (e, _) <- el' "div" (text "Click")
+--     return $ domEvent Click e
+-- @
 {-# INLINABLE el' #-}
 el' :: forall t m a. DomBuilder t m => Text -> m a -> m (Element EventResult (DomBuilderSpace m) t, a)
 el' elementTag = element elementTag def
@@ -212,6 +245,10 @@ elDynAttrNS' mns elementTag attrs child = do
   postBuild <- getPostBuild
   notReadyUntil postBuild
   return result
+
+{-# INLINABLE elDynAttrNS #-}
+elDynAttrNS :: forall t m a. (DomBuilder t m, PostBuild t m) => Maybe Text -> Text -> Dynamic t (Map Text Text) -> m a -> m a
+elDynAttrNS mns elementTag attrs child = fmap snd $ elDynAttrNS' mns elementTag attrs child
 
 dynamicAttributesToModifyAttributes :: (Ord k, PostBuild t m) => Dynamic t (Map k Text) -> m (Event t (Map k (Maybe Text)))
 dynamicAttributesToModifyAttributes = dynamicAttributesToModifyAttributesWithInitial mempty
@@ -257,6 +294,8 @@ newtype Link t
   = Link { _link_clicked :: Event t ()
          }
 
+-- | >>> linkClass "Click here" "link-class"
+-- > <a class="link-class">Click here</a>
 linkClass :: DomBuilder t m => Text -> Text -> m (Link t)
 linkClass s c = do
   (l,_) <- elAttr' "a" ("class" =: c) $ text s

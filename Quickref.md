@@ -28,7 +28,7 @@ Widgets may return any type (this is 'a' in many of the functions below).  Often
 -- This version returns the 'El' as well.
 [W]   el'        :: Text ->                                  m a -> m (El, a)
 
--- These two additionally apply attributes to the element, such as ("class" =: "blah")
+-- These two additionally apply attributes to the element, such as ("class" =: "blah"). (=:) is 'Map.singleton'
 [W]   elAttr     :: Text ->            Map Text Text ->      m a -> m a
 [W]   elAttr'    :: Text ->            Map Text Text ->      m a -> m (El, a)
 
@@ -75,6 +75,7 @@ Note the "list" functions do not imply particular HTML tags (ul, li, etc), thoug
 
 -- Same as dyn, but takes initial value and an update Event instead of a Dynamic.
 [W]   widgetHold :: m a ->   Event (m a) -> m (Dynamic a)
+```
 
 Also see the "Collection management functions" section in the `reflex` Quick Reference.
 

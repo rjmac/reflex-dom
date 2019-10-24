@@ -1,29 +1,36 @@
 package org.reflexfrp.reflexdom;
 
-import java.lang.reflect.Method;
-
-import android.Manifest;
-import android.app.Activity;
+import android.annotation.TargetApi;
+import android.net.Uri;
+import android.os.Build;
 import android.os.Handler;
 import android.util.Log;
-import android.content.pm.PackageManager;
 import android.view.ViewGroup.LayoutParams;
 import android.view.Window;
 import android.view.View;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
+import android.webkit.MimeTypeMap;
+import android.webkit.PermissionRequest;
+import android.webkit.WebChromeClient;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
-import android.webkit.WebChromeClient;
-import android.webkit.PermissionRequest;
+import android.graphics.Bitmap;
+import java.io.IOException;
+import java.io.InputStream;
+import android.content.Intent;
+import android.content.ActivityNotFoundException;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import java.nio.charset.StandardCharsets;
 
-public class MainWidget {
-  static final int REQ_READ_CAMERA = 1;
+import systems.obsidian.HaskellActivity;
 
-  private static Object startMainWidget(final Activity a, String url, long jsaddleCallbacks, final String initialJS) {
+public class MainWidget {
+  private static Object startMainWidget(final HaskellActivity a, String url, long jsaddleCallbacks, final String initialJS) {
     CookieManager.setAcceptFileSchemeCookies(true); //TODO: Can we do this just for our own WebView?
 
     // Remove title and notification bars
@@ -32,60 +39,6 @@ public class MainWidget {
     final WebView wv = new WebView(a);
     wv.addJavascriptInterface(new CustomJS(a, wv), "magicounter");
     wv.setLayoutParams(new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
-    wv.setWebChromeClient(new WebChromeClient() {
-            PermissionRequest pendingRequest;
-
-            {
-                try {
-                    Class<?> cls = a.getClass();
-                    Method m = cls.getMethod("setOnRequestPermissionsResultCallback", Object.class);
-                    m.invoke(a, this);
-                } catch(RuntimeException e) {
-                    throw e;
-                } catch(Exception e) {
-                    throw new RuntimeException(e);
-                }
-            }
-            private void askPermission(Activity a, PermissionRequest request) {
-                if(a.checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-                    request.grant(request.getResources());
-                } else {
-                    pendingRequest = request;
-                    a.requestPermissions(new String[]{Manifest.permission.CAMERA}, REQ_READ_CAMERA);
-                }
-            }
-
-            public boolean onRequestPermissionsResultCallback(int requestCode, String[] permissions, int[] grantResults) {
-                if(pendingRequest != null) {
-                    PermissionRequest request = pendingRequest;
-                    pendingRequest = null;
-                    if(requestCode == REQ_READ_CAMERA) {
-                        if(permissions.length != 1 || grantResults.length != 1 || grantResults[0] != PackageManager.PERMISSION_GRANTED) {
-                            request.deny();
-                        } else {
-                            request.grant(request.getResources());
-                        }
-                        return true;
-                    }
-                }
-                return false;
-            }
-
-            @Override
-            public void onPermissionRequest(PermissionRequest request) {
-                for(String r : request.getResources()) {
-                    if(PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(r)) {
-                        askPermission(a, request);
-                        break;
-                    }
-                }
-            }
-
-            @Override
-            public void onPermissionRequestCanceled(PermissionRequest request) {
-                pendingRequest = null;
-            }
-        });
     a.setContentView(wv);
     final WebSettings ws = wv.getSettings();
     ws.setJavaScriptEnabled(true);
@@ -95,6 +48,7 @@ public class MainWidget {
     wv.setWebContentsDebuggingEnabled(true);
     // allow video to play without user interaction
     wv.getSettings().setMediaPlaybackRequiresUserGesture(false);
+    final AtomicBoolean jsaddleLoaded = new AtomicBoolean(false);
 
     wv.setSystemUiVisibility(
               View.SYSTEM_UI_FLAG_LAYOUT_STABLE
@@ -107,9 +61,78 @@ public class MainWidget {
     wv.setWebViewClient(new WebViewClient() {
         @Override
         public void onPageFinished(WebView _view, String _url) {
-          wv.evaluateJavascript(initialJS, null);
+          Log.i("reflex", "onPageFinished");
+          boolean alreadyLoaded = jsaddleLoaded.getAndSet(true);
+          if(!alreadyLoaded) {
+            Log.i("reflex", "loading jsaddle");
+            wv.evaluateJavascript(initialJS, null);
+          }
         }
-      });
+
+        // Re-route / to /android_asset
+        @Override
+        public WebResourceResponse shouldInterceptRequest (WebView view, WebResourceRequest request) {
+            Uri uri = request.getUrl();
+            if(!uri.getScheme().equals("file"))
+                return null;
+
+            String path = uri.getPath();
+            path = getAssetPath(path);
+
+            String mimeType = getMimeType(uri.toString());
+            String encoding = "";
+
+            try {
+                InputStream data = a.getApplicationContext().getAssets().open(path);
+                return new WebResourceResponse(mimeType, encoding, data);
+            }
+            catch (IOException e) {
+                Log.i("reflex", "Opening resource failed, Webview will handle the request ..");
+                e.printStackTrace();
+            }
+
+            return null;
+        }
+
+        @Override
+        public boolean shouldOverrideUrlLoading(WebView view, String url) {
+            if( url != null && !url.startsWith("http://") && !url.startsWith("https://") && !url.startsWith("file://")) {
+                try {
+                    view.getContext().startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+                }
+                catch(ActivityNotFoundException  e) {
+                    Log.e("reflex", "Starting activity for intent '" + url + "' failed!");
+                }
+                return true;
+            } else {
+                return false;
+            }
+        }
+    });
+
+    wv.setWebChromeClient(new WebChromeClient() {
+        // Need to accept permissions to use the camera and audio
+        @Override
+        public void onPermissionRequest(final PermissionRequest request) {
+            if(request.getOrigin().toString().startsWith("file://")) {
+                a.requestWebViewPermissions(request);
+            }
+            else {
+                a.runOnUiThread(new Runnable() {
+                        @TargetApi(Build.VERSION_CODES.LOLLIPOP)
+                        @Override
+                        public void run() {
+                            request.deny();
+                        }
+                    });
+            }
+        }
+
+        @Override
+        public Bitmap getDefaultVideoPoster() {
+            return Bitmap.createBitmap(10, 10, Bitmap.Config.ARGB_8888);
+        }
+    });
 
     wv.addJavascriptInterface(new JSaddleCallbacks(jsaddleCallbacks), "jsaddle");
 
@@ -129,35 +152,43 @@ public class MainWidget {
     };
   }
 
-  private static class CustomJS {
-      private final Activity activity;
+  private static class CustomJS implements HaskellActivity.BatteryStatusCallback {
+      private final HaskellActivity activity;
       private final WebView webView;
 
-      public CustomJS(Activity activity, WebView webView) {
+      public CustomJS(HaskellActivity activity, WebView webView) {
           this.activity = activity;
           this.webView = webView;
       }
 
       @JavascriptInterface
       public String setupBattery() {
-          try {
-              Class<?> cls = activity.getClass();
-              Method m = cls.getMethod("setBatteryStatusCallback", Object.class);
-              return (String) m.invoke(activity, CustomJS.this);
-          } catch(RuntimeException e) {
-              throw e;
-          } catch(Exception e) {
-              throw new RuntimeException(e);
-          }
+          return activity.setBatteryStatusCallback(this);
       }
 
-      public void onBatteryStatusCallback(final boolean charging, final float percent) {
+      public void batteryStatusChanged(final boolean charging, final int percent) {
           webView.post(new Runnable() {
                   public void run() {
                       webView.evaluateJavascript("batterycb({ charging: " + charging + ", percent: " + percent + "});", null);
                   }
               });
       }
+  }
+
+  private static String getMimeType(String url) {
+      String type = "";
+      String extension = MimeTypeMap.getFileExtensionFromUrl(url);
+      if (extension != null) {
+          type = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension);
+      }
+      return type;
+  }
+
+  /** Get the path of an asset. Strips leading / and leading /android_asset/ */
+  private static String getAssetPath(String path) {
+      path = path.startsWith("/android_asset") ? path.substring("/android_asset".length()) : path;
+      path = path.startsWith("/") ? path.substring(1) : path;
+      return path;
   }
 
   private static class JSaddleCallbacks {
